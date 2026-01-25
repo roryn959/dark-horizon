@@ -3,7 +3,7 @@
 
 #include "View/Canvas.h"
 
-#define GPU_BUILD 1
+#define GPU_BUILD 0
 
 #if GPU_BUILD
 #include "Execution/GpuExecutor.h"
@@ -14,6 +14,7 @@ typedef CpuExecutor Executor;
 #endif
 
 #define FRAME_RATE_FREQUENCY 30
+
 
 void RenderScene(Canvas& canvas, uint32_t* buffer, Executor& executor) {
 	executor.TracePhotons(buffer);
@@ -38,6 +39,9 @@ void Mainloop(Canvas& canvas, Executor& executor) {
                     running = false;
                     break;
 
+				case SDL_KEYDOWN:
+					break;
+
                 default:
                     break;
             }
@@ -51,7 +55,7 @@ void Mainloop(Canvas& canvas, Executor& executor) {
         --frame_tick;
         if (0 == frame_tick) {
             float fps = FRAME_RATE_FREQUENCY / (currentTime - lastFpsTime);
-            std::cout << "fps: " << fps << "\n";
+            //std::cout << "fps: " << fps << "\n";
             frame_tick = FRAME_RATE_FREQUENCY;
             lastFpsTime = currentTime;
 		}
