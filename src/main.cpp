@@ -60,7 +60,7 @@ void Mainloop(Canvas& canvas, Executor& executor) {
             lastFpsTime = currentTime;
 		}
 
-		RenderScene(canvas, buffer, executor);
+		//RenderScene(canvas, buffer, executor);
 
 		lastTime = currentTime;
     }

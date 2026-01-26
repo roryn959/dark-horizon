@@ -9,31 +9,44 @@
 #include "Model/Vector.h"
 #include "View/Canvas.h"
 
-#define GRAPH_W 20.0
-#define GRAPH_H 20.0
+#define GRAPH_SIZE 50.0
 
-#define LAMBDA 0.001
+constexpr double GRAPH_HALFRANGE = GRAPH_SIZE / 2;
 
-constexpr double X_HALFRANGE = GRAPH_W / 2;
-constexpr double Y_HALFRANGE = GRAPH_H / 2;
-constexpr double WIN_TO_GRAPH_W_FACTOR = WINDOW_W / GRAPH_W; 
-constexpr double WIN_TO_GRAPH_H_FACTOR = WINDOW_H / GRAPH_H;
+constexpr double WIN_TO_GRAPH_W_FACTOR = WINDOW_W / GRAPH_SIZE; 
+constexpr double WIN_TO_GRAPH_H_FACTOR = WINDOW_H / GRAPH_SIZE;
+
+constexpr double ASPECT_RATIO = WINDOW_W / WINDOW_H;
+constexpr double VERTICAL_FOV = M_PI_2;
+const double HORIZONTAL_FOV = 2 * atan((VERTICAL_FOV / 2) * ASPECT_RATIO); 
+const double HALF_VERTICAL_EXTENT = tan(VERTICAL_FOV / 2);
+const double HALF_HORIZONTAL_EXTENT = HALF_VERTICAL_EXTENT * ASPECT_RATIO;
+
+#define LAMBDA 0.02
+#define STEP_K 2.5
+
+#define ACCRETION_DISC_INNER_RADIUS 6.0
+#define ACCRETION_DISC_OUTER_RADIUS 15.0
 
 constexpr inline int graphToWindowX(double x) {
-    return round( (x + (GRAPH_W / 2) ) * (WIN_TO_GRAPH_W_FACTOR) );
+    return round( (x + (GRAPH_SIZE / 2) ) * (WIN_TO_GRAPH_W_FACTOR) );
 }
 
 constexpr inline int graphToWindowY(double y) {
-    return WINDOW_H - round( (y + (GRAPH_H / 2) ) * (WIN_TO_GRAPH_H_FACTOR) );
+    return WINDOW_H - round( (y + (GRAPH_SIZE / 2) ) * (WIN_TO_GRAPH_H_FACTOR) );
 }
 
 constexpr inline double windowToGraphX(int x) {
-	return  (x / (double) WIN_TO_GRAPH_W_FACTOR) - X_HALFRANGE;
+	return  (x / (double) WIN_TO_GRAPH_W_FACTOR) - GRAPH_HALFRANGE;
 }
 
 constexpr inline double windowToGraphY(int y) {
-	return  -1 * ((y / (double) WIN_TO_GRAPH_H_FACTOR) - Y_HALFRANGE);
+	return  -1 * ((y / (double) WIN_TO_GRAPH_H_FACTOR) - GRAPH_HALFRANGE);
 }
+
+constexpr Vector COLOUR_INNER_ACCRETION_DISC{ 1.0, 0.8, 0.35 };
+constexpr Vector COLOUR_OUTER_ACCRETION_DISC{ 1.0, 0.94, 0.82 };
+constexpr Vector ACCRETION_DISC_COLOUR_DIFFERENCE = COLOUR_OUTER_ACCRETION_DISC - COLOUR_INNER_ACCRETION_DISC;
 
 class CpuExecutor {
 public:
@@ -42,14 +55,14 @@ public:
 
 	void TracePhotons(uint32_t* pixelBuffer);
 
-	void ProcessTimeStep(Photon&);
+	void MarchPhoton(Photon&);
 
 private:
+	Vector GenerateInitialDirection(size_t i);
+
+	uint32_t GetAccretionDiscColour(double r);
+
 	void TracePhoton(uint32_t* pixelBuffer, size_t i);
-
-	inline double A(double r) { return (1 - (2 / r)); }
-
-	inline double Squash(double x) { return x / (x + 1); }
 
 	std::vector<Photon> m_photons;
 };
