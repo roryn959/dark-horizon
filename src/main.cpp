@@ -3,7 +3,7 @@
 
 #include "View/Canvas.h"
 
-#define GPU_BUILD 0
+#define GPU_BUILD 1
 
 #if GPU_BUILD
 #include "Execution/GpuExecutor.h"

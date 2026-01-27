@@ -16,13 +16,13 @@ void CpuExecutor::TracePhotons(uint32_t* pixelBuffer) {
 }
 
 void CpuExecutor::MarchPhoton(Photon& photon) {
-	double r = Magnitude(photon.m_position);
+	float r = Magnitude(photon.m_position);
 
-	double curvature = 3.0 / (r * r * r);
-	double h = LAMBDA / (1.0 + STEP_K * curvature);
+	float curvature = 3.0 / (r * r * r);
+	float h = LAMBDA / (1.0 + STEP_K * curvature);
 
 	auto f = [&r, &curvature](const Vector& position, const Vector& direction) -> Vector {
-		double r = Magnitude(position);
+		float r = Magnitude(position);
 		Vector r_hat = position / r;
 
 		Vector e_r = r_hat - Dot(r_hat, direction) * direction;
@@ -31,29 +31,29 @@ void CpuExecutor::MarchPhoton(Photon& photon) {
 
 	Vector v1 = photon.m_direction;
 	Vector x1 = photon.m_position;
-	double r1 = Magnitude(x1);
-	double s_r1 = 1.0 - (2.0 / r1);
+	float r1 = Magnitude(x1);
+	float s_r1 = 1.0 - (2.0 / r1);
 	Vector k1_x = s_r1 * v1;
 	Vector k1_v = f(x1, Normalise(v1));
 
 	Vector x2 = x1 + 0.5 * h * k1_x;
 	Vector v2 = Normalise(v1 + 0.5 * h * k1_v);
-	double r2 = Magnitude(x2);
-	double s_r2 = 1.0 - (2.0 / r2);
+	float r2 = Magnitude(x2);
+	float s_r2 = 1.0 - (2.0 / r2);
 	Vector k2_x = s_r2 * v2;
 	Vector k2_v = f(x2, Normalise(v2));
 
 	Vector x3 = x1 + 0.5 * h * k2_x;
 	Vector v3 = Normalise(v1 + 0.5 * h * k2_v);
-	double r3 = Magnitude(x3);
-	double s_r3 = 1.0 - (2.0 / r3);
+	float r3 = Magnitude(x3);
+	float s_r3 = 1.0 - (2.0 / r3);
 	Vector k3_x = s_r3 * v3;
 	Vector k3_v = f(x3, Normalise(v3));
 
 	Vector x4 = x1 + h * k3_x;
 	Vector v4 = Normalise(v1 + h * k3_v);
-	double r4 = Magnitude(x4);
-	double s_r4 = 1.0 - (2.0 / r4);
+	float r4 = Magnitude(x4);
+	float s_r4 = 1.0 - (2.0 / r4);
 	Vector k4_x = s_r4 * v4;
 	Vector k4_v = f(x4, Normalise(v4));
 	
@@ -63,31 +63,30 @@ void CpuExecutor::MarchPhoton(Photon& photon) {
 }
 
 Vector CpuExecutor::GenerateInitialDirection(size_t i) {
-	double wx = 2 * ( ( (i % WINDOW_W) + 0.5 ) / WINDOW_W ) - 1;
-	double wy = 1 - 2 * ( (i / WINDOW_W + 0.5 ) / WINDOW_H );
+	float wx = 2 * ( ( (i % WINDOW_W) + 0.5 ) / WINDOW_W ) - 1;
+	float wy = 1 - 2 * ( (i / WINDOW_W + 0.5 ) / WINDOW_H );
 
 	Vector dir = { wx * HALF_HORIZONTAL_EXTENT, wy * HALF_VERTICAL_EXTENT, 1.0 };
 
 	return Normalise(dir);
 }
 
-uint32_t CpuExecutor::GetAccretionDiscColour(double r) {
-	double outness = (r - ACCRETION_DISC_INNER_RADIUS) / (ACCRETION_DISC_OUTER_RADIUS - ACCRETION_DISC_INNER_RADIUS);
+uint32_t CpuExecutor::GetAccretionDiscColour(float r) {
+	float outness = (r - ACCRETION_DISC_INNER_RADIUS) / (ACCRETION_DISC_OUTER_RADIUS - ACCRETION_DISC_INNER_RADIUS);
 	return ColourToUint32(COLOUR_INNER_ACCRETION_DISC + outness * ACCRETION_DISC_COLOUR_DIFFERENCE);
 }
 
 void CpuExecutor::TracePhoton(uint32_t* pixelBuffer, size_t i) {
-	std::cout << "Doing pixel " << i << '\n';
 	Vector initialPosition{ 0.0, 5.0, -GRAPH_HALFRANGE };
 	Vector initialDirection = GenerateInitialDirection(i);
 
-	Photon photon{ initialPosition, { initialDirection } };
+	Photon photon{ initialPosition, initialDirection };
 
 	size_t MAX_STEPS = 2500;
 	size_t steps = 0;
 	while (steps < MAX_STEPS) {
 		Vector p = photon.m_position;
-		double r = Magnitude(p);
+		float r = Magnitude(p);
 		if (r <= 3.0) {
 			pixelBuffer[i] = 0xFF000000;
 			return;
@@ -110,8 +109,8 @@ void CpuExecutor::TracePhoton(uint32_t* pixelBuffer, size_t i) {
 			return;
 		}
 
-		MarchPhoton(photon);
-		//photon.m_position = p + photon.m_direction * LAMBDA;
+		//MarchPhoton(photon);
+		photon.m_position = p + photon.m_direction * LAMBDA;
 		++steps;
 	}
 
