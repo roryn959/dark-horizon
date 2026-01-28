@@ -9,7 +9,10 @@ struct GpuExecutor::Impl {
     id<MTLComputePipelineState> pipeline;
 };
 
-GpuExecutor::GpuExecutor()
+GpuExecutor::GpuExecutor() :
+	m_rho{ -GRAPH_HALFRANGE },
+	m_theta{0.0f},
+	m_phi{0.0f}
 {
 	@autoreleasepool {
 		impl = new Impl{};
@@ -88,6 +91,14 @@ void GpuExecutor::InitialisePipeline()
     }
 }
 
+Vector GpuExecutor::ComputeCameraPosition() {
+	return Vector {
+		m_rho * cos(-m_phi) * sin(m_theta),
+		m_rho * sin(-m_phi),
+		m_rho * cos(-m_phi) * cos(m_theta)
+	};
+}
+
 void GpuExecutor::TracePhotons(uint32_t* pixels) {
 
 	id<MTLBuffer> pixelBuffer = [
@@ -97,6 +108,8 @@ void GpuExecutor::TracePhotons(uint32_t* pixels) {
         options:MTLResourceStorageModeShared
         deallocator:nil
 	];
+
+	Vector cameraPosition = ComputeCameraPosition();
 
 	id<MTLCommandBuffer> cmd = [impl->queue commandBuffer];
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
@@ -109,6 +122,7 @@ void GpuExecutor::TracePhotons(uint32_t* pixels) {
 	[enc setComputePipelineState:impl->pipeline];
 
     [enc setBuffer:pixelBuffer offset:0 atIndex:0];
+	[enc setBytes:&cameraPosition length:sizeof(Vector) atIndex:1];
 
     [enc dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
 

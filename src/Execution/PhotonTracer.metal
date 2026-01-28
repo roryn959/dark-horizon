@@ -4,10 +4,10 @@ using namespace metal;
 // ---------- Physics/Maths Constants ----------
 
 #define PI 3.14159265f
-#define LAMBDA 0.05f
+#define LAMBDA 0.02f
 #define STEP_K 2.5f
 
-#define ACCRETION_DISC_INNER_RADIUS 4.0f
+#define ACCRETION_DISC_INNER_RADIUS 5.0f
 #define ACCRETION_DISC_OUTER_RADIUS 8.00f
 
 // ---------- GUI Constants ----------
@@ -76,6 +76,22 @@ inline float Dot(Vector v0, Vector v1) {
 	return v0.m_0 * v1.m_0 + v0.m_1 * v1.m_1 + v0.m_2 * v1.m_2;
 }
 
+inline Vector Cross(Vector v0, Vector v1) {
+	return Vector {
+		v0.m_1 * v1.m_2 - v0.m_2 * v1.m_1,
+		v0.m_2 * v1.m_0 - v0.m_0 * v1.m_2,
+		v0.m_0 * v1.m_1 - v0.m_1 * v1.m_0
+	 };
+}
+
+inline float Distance(Vector v0, Vector v1) {
+	float dx = v0.m_0 - v1.m_0;
+	float dy = v0.m_1 - v1.m_1;
+	float dz = v0.m_2 - v1.m_2;
+
+	return sqrt(dx * dx + dy * dy + dz * dz);
+}
+
 inline uint32_t ColourToUint32(Vector v) {
 	return 	( 	static_cast<uint32_t>(0xFF) 		<< 24 	) 	|
 			( 	static_cast<uint32_t>(255 * v.m_0) 	<< 16 	) 	|
@@ -94,19 +110,110 @@ struct Photon {
 	Vector m_direction;
 };
 
+// ---------- Star ----------
+
+struct Star {
+	Vector m_position;
+	float m_radius;
+	Vector m_colour;
+};
+
+inline Star _SUN() {
+	return Star {
+		17.0 * Vector{ 0.0f, 0.0f, 1.0f },
+		1.5,
+		Vector{ 1.00f, 0.90f, 0.85f }
+	};
+}
+#define SUN _SUN()
+
+inline Star _RED_GIANT() {
+	return Star {
+		28 * Vector{ 1.0, 0.0, 0.0 },
+		6,
+		Vector{ 1.0f, 0.20f, 0.20f }
+	};
+}
+#define RED_GIANT _RED_GIANT()
+
 // ---------- Helper Functions ----------
 
-Vector GenerateInitialDirection(uint i) {
+Vector GenerateInitialDirection(uint i, Vector cameraPosition) {
 	float wx = 2 * ( ( (i % WINDOW_W) + 0.5f ) / WINDOW_W ) - 1;
 	float wy = 1 - 2 * ( (i / WINDOW_W + 0.5f ) / WINDOW_H );
 
 	Vector dir = { wx * HALF_HORIZONTAL_EXTENT, wy * HALF_VERTICAL_EXTENT, 1.0 };
-	return Normalise(dir);
+
+	Vector cameraForward = Normalise(-1 * cameraPosition);
+	Vector cameraRight   = Normalise(Cross(cameraForward, Vector{0, 1, 0}));
+	Vector cameraUp      = Cross(cameraRight, cameraForward);
+
+	return Normalise(
+		dir.m_0 * cameraRight +
+		dir.m_1 * cameraUp	+
+		dir.m_2 * cameraForward
+	);
 }
 
 uint32_t GetAccretionDiscColour(float r) {
 	float outness = (r - ACCRETION_DISC_INNER_RADIUS) / (ACCRETION_DISC_OUTER_RADIUS - ACCRETION_DISC_INNER_RADIUS);
 	return ColourToUint32(COLOUR_INNER_ACCRETION_DISC + outness * ACCRETION_DISC_COLOUR_DIFFERENCE);
+}
+
+float CollisionTime(Photon photon, Star star) {
+	Vector L = photon.m_position - star.m_position;
+
+	float a = Dot(photon.m_direction, photon.m_direction);
+	float b = 2.0f * Dot(photon.m_direction, L);
+	float c = Dot(L, L) - star.m_radius * star.m_radius;
+
+	float d = b * b - 4.0f * a * c;
+
+	if (d < 0.0f) return FLT_MAX;
+	
+	float sqrtD = sqrt(d);
+
+    // Numerically stable root computation
+    float q = (b > 0.0f)
+        ? -0.5f * (b + sqrtD)
+        : -0.5f * (b - sqrtD);
+
+    float t0 = q / a;
+    float t1 = c / q;
+
+    if (t0 > t1) {
+        float tmp = t0;
+        t0 = t1;
+        t1 = tmp;
+    }
+
+    // Pick nearest valid hit
+    float t = (t0 > LAMBDA) ? t0 : t1;
+    if (t < LAMBDA) return FLT_MAX;
+
+	return t;
+}
+
+uint32_t ResolveNomad(Photon photon) {
+	float best_t = FLT_MAX;
+	Vector colour = Vector{ 1.0, 1.0, 1.0};
+	float t;
+
+	t = CollisionTime(photon, SUN);
+	if (t < best_t) {
+		best_t = t;
+		colour = SUN.m_colour;
+	}
+
+	t = CollisionTime(photon, RED_GIANT);
+	if (t < best_t) {
+		best_t = t;
+		colour = RED_GIANT.m_colour;
+	}
+
+	if (t < 1000.0) return ColourToUint32(colour);
+
+	return 0xFF000000;
 }
 
 Vector inline f(Vector position, Vector direction, float r, float curvature) {
@@ -160,10 +267,11 @@ Photon MarchPhoton(Photon photon) {
 
 kernel void TracePhoton(
     device 		uint* 		pixelBuffer 		[[ buffer(0) ]],
+	constant	Vector*		cameraPosition		[[ buffer(1) ]],
     			uint 		i 					[[ thread_position_in_grid ]]
 ) {
-	Vector initialPosition{ 0.0f, 2.0f, -GRAPH_HALFRANGE };
-	Vector initialDirection = GenerateInitialDirection(i);
+	Vector initialPosition{ *cameraPosition };
+	Vector initialDirection = GenerateInitialDirection(i, initialPosition);
 
 	Photon photon = Photon{ initialPosition, initialDirection };
 
@@ -190,7 +298,7 @@ kernel void TracePhoton(
 			(p.m_2 < -GRAPH_HALFRANGE) 	||
 			(p.m_2 > GRAPH_HALFRANGE)
 		) {
-			pixelBuffer[i] = 0xFF000000;
+			pixelBuffer[i] = ResolveNomad(photon);
 			return;
 		}
 
