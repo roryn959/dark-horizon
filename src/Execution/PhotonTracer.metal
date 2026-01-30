@@ -7,8 +7,8 @@ using namespace metal;
 #define LAMBDA 0.02f
 #define STEP_K 2.5f
 
-#define ACCRETION_DISC_INNER_RADIUS 5.0f
-#define ACCRETION_DISC_OUTER_RADIUS 8.00f
+#define ACCRETION_DISC_INNER_RADIUS 4.5f
+#define ACCRETION_DISC_OUTER_RADIUS 12.0f
 
 // ---------- GUI Constants ----------
 
@@ -99,6 +99,13 @@ inline uint32_t ColourToUint32(Vector v) {
 				static_cast<uint32_t>(255 * v.m_2);
 }
 
+inline uint32_t ColourToUint32(Vector v, float brightness) {
+	return 	( 	static_cast<uint32_t>(255 * brightness) 	<< 24 	) 	|
+			( 	static_cast<uint32_t>(255 * v.m_0) 			<< 16 	) 	|
+			( 	static_cast<uint32_t>(255 * v.m_1) 			<< 8 	)	|
+				static_cast<uint32_t>(255 * v.m_2);
+}
+
 constant Vector COLOUR_INNER_ACCRETION_DISC = { 1.0f, 0.8f, 0.35f };
 constant Vector COLOUR_OUTER_ACCRETION_DISC = { 1.0f, 0.94f, 0.82f };
 constant Vector ACCRETION_DISC_COLOUR_DIFFERENCE = COLOUR_OUTER_ACCRETION_DISC - COLOUR_INNER_ACCRETION_DISC;
@@ -155,9 +162,14 @@ Vector GenerateInitialDirection(uint i, Vector cameraPosition) {
 	);
 }
 
-uint32_t GetAccretionDiscColour(float r) {
+void HandleAccretionDiscCollision(float r, thread Vector* photonColour, thread float* photonColourSpace) {
 	float outness = (r - ACCRETION_DISC_INNER_RADIUS) / (ACCRETION_DISC_OUTER_RADIUS - ACCRETION_DISC_INNER_RADIUS);
-	return ColourToUint32(COLOUR_INNER_ACCRETION_DISC + outness * ACCRETION_DISC_COLOUR_DIFFERENCE);
+	float density = pow(1.0f - outness, 10.0f);
+
+	Vector colour{ density * COLOUR_INNER_ACCRETION_DISC + (1.0f - density) * COLOUR_OUTER_ACCRETION_DISC };
+	
+	*photonColour = *photonColour + colour * *photonColourSpace * density;
+	*photonColourSpace = *photonColourSpace * (1.0f - density);
 }
 
 float CollisionTime(Photon photon, Star star) {
@@ -173,7 +185,6 @@ float CollisionTime(Photon photon, Star star) {
 	
 	float sqrtD = sqrt(d);
 
-    // Numerically stable root computation
     float q = (b > 0.0f)
         ? -0.5f * (b + sqrtD)
         : -0.5f * (b - sqrtD);
@@ -194,7 +205,7 @@ float CollisionTime(Photon photon, Star star) {
 	return t;
 }
 
-uint32_t ResolveNomad(Photon photon) {
+Vector ResolveNomad(Photon photon) {
 	float best_t = FLT_MAX;
 	Vector colour = Vector{ 1.0, 1.0, 1.0};
 	float t;
@@ -211,9 +222,9 @@ uint32_t ResolveNomad(Photon photon) {
 		colour = RED_GIANT.m_colour;
 	}
 
-	if (t < 1000.0) return ColourToUint32(colour);
+	if (t < 1000.0) return colour;
 
-	return 0xFF000000;
+	return Vector{ 0.0f, 0.0f, 0.0f };
 }
 
 Vector inline f(Vector position, Vector direction, float r, float curvature) {
@@ -275,19 +286,20 @@ kernel void TracePhoton(
 
 	Photon photon = Photon{ initialPosition, initialDirection };
 
+	thread Vector photonColour{ 0.0f, 0.0f, 0.0f };
+	thread float photonColourSpace = 1.0f;
+
 	uint MAX_STEPS = 5000;
 	uint steps = 0;
 	while (steps < MAX_STEPS) {
 		Vector p = photon.m_position;
 		float r = Magnitude(p);
 		if (r <= 3.0f) {
-			pixelBuffer[i] = 0xFF000000;
-			return;
+			break;
 		}
 
 		if (p.m_1 > -LAMBDA && p.m_1 < LAMBDA && r > ACCRETION_DISC_INNER_RADIUS && r < ACCRETION_DISC_OUTER_RADIUS) {
-			pixelBuffer[i] = GetAccretionDiscColour(r);
-			return;
+			HandleAccretionDiscCollision(r, &photonColour, &photonColourSpace);
 		}
 
 		if (
@@ -298,8 +310,8 @@ kernel void TracePhoton(
 			(p.m_2 < -GRAPH_HALFRANGE) 	||
 			(p.m_2 > GRAPH_HALFRANGE)
 		) {
-			pixelBuffer[i] = ResolveNomad(photon);
-			return;
+			photonColour = photonColour + photonColourSpace * ResolveNomad(photon);
+			break;
 		}
 
 		photon = MarchPhoton(photon);
@@ -307,5 +319,5 @@ kernel void TracePhoton(
 		++steps;
 	}
 
-	pixelBuffer[i] = 0xFF000000;
+	pixelBuffer[i] = ColourToUint32(photonColour);
 }
