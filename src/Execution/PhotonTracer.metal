@@ -7,13 +7,13 @@ using namespace metal;
 #define LAMBDA 0.02f
 #define STEP_K 2.5f
 
-#define ACCRETION_DISC_INNER_RADIUS 4.5f
-#define ACCRETION_DISC_OUTER_RADIUS 12.0f
+#define ACCRETION_DISC_INNER_RADIUS 3.5f
+#define ACCRETION_DISC_OUTER_RADIUS 7.0f
 
 // ---------- GUI Constants ----------
 
-#define WINDOW_W 800
-#define WINDOW_H 800
+#define WINDOW_W 400
+#define WINDOW_H 400
 #define GRAPH_SIZE 30.0f
 
 constant float GRAPH_HALFRANGE = GRAPH_SIZE / 2.0f;
@@ -106,8 +106,8 @@ inline uint32_t ColourToUint32(Vector v, float brightness) {
 				static_cast<uint32_t>(255 * v.m_2);
 }
 
-constant Vector COLOUR_INNER_ACCRETION_DISC = { 1.0f, 0.8f, 0.35f };
-constant Vector COLOUR_OUTER_ACCRETION_DISC = { 1.0f, 0.94f, 0.82f };
+constant Vector COLOUR_INNER_ACCRETION_DISC = Vector{ 0.78f, 0.258f, 0.106f };
+constant Vector COLOUR_OUTER_ACCRETION_DISC = Vector{ 0.498f, 0.094f, 0.047f };
 constant Vector ACCRETION_DISC_COLOUR_DIFFERENCE = COLOUR_OUTER_ACCRETION_DISC - COLOUR_INNER_ACCRETION_DISC;
 
 // ---------- Photon ----------
@@ -127,8 +127,8 @@ struct Star {
 
 inline Star _SUN() {
 	return Star {
-		17.0 * Vector{ 0.0f, 0.0f, 1.0f },
-		1.5,
+		25.0 * Normalise(Vector{ 0.0f, 0.0f, 1.0f }),
+		3.5f,
 		Vector{ 1.00f, 0.90f, 0.85f }
 	};
 }
@@ -136,9 +136,9 @@ inline Star _SUN() {
 
 inline Star _RED_GIANT() {
 	return Star {
-		28 * Vector{ 1.0, 0.0, 0.0 },
+		28 * Normalise(Vector{ 1.0f, 0.0f, 1.0f }),
 		6,
-		Vector{ 1.0f, 0.20f, 0.20f }
+		Vector{ 0.65f, 0.133f, 0.094f }
 	};
 }
 #define RED_GIANT _RED_GIANT()
@@ -162,14 +162,23 @@ Vector GenerateInitialDirection(uint i, Vector cameraPosition) {
 	);
 }
 
-void HandleAccretionDiscCollision(float r, thread Vector* photonColour, thread float* photonColourSpace) {
+void HandleAccretionDiscCollision(Vector p, float r, thread Vector* photonColour, thread float* photonColourSpace) {
+	Vector tempPhotonColour = *photonColour;
+	float tempPhotonColourSpace = *photonColourSpace;
+
 	float outness = (r - ACCRETION_DISC_INNER_RADIUS) / (ACCRETION_DISC_OUTER_RADIUS - ACCRETION_DISC_INNER_RADIUS);
-	float density = pow(1.0f - outness, 10.0f);
+	float density = 1.0f - outness;//pow(1.0f - outness, 10.0f);
 
 	Vector colour{ density * COLOUR_INNER_ACCRETION_DISC + (1.0f - density) * COLOUR_OUTER_ACCRETION_DISC };
+
+	//*photonColour = colour;
+	//return;
 	
-	*photonColour = *photonColour + colour * *photonColourSpace * density;
-	*photonColourSpace = *photonColourSpace * (1.0f - density);
+	tempPhotonColour = tempPhotonColour + colour * tempPhotonColourSpace * density;
+	tempPhotonColourSpace = tempPhotonColourSpace * (1.0f - density);
+
+	*photonColour = tempPhotonColour;
+	*photonColourSpace = tempPhotonColourSpace;
 }
 
 float CollisionTime(Photon photon, Star star) {
@@ -207,14 +216,8 @@ float CollisionTime(Photon photon, Star star) {
 
 Vector ResolveNomad(Photon photon) {
 	float best_t = FLT_MAX;
-	Vector colour = Vector{ 1.0, 1.0, 1.0};
+	Vector colour = Vector{ 0.0, 0.0, 0.0};
 	float t;
-
-	t = CollisionTime(photon, SUN);
-	if (t < best_t) {
-		best_t = t;
-		colour = SUN.m_colour;
-	}
 
 	t = CollisionTime(photon, RED_GIANT);
 	if (t < best_t) {
@@ -222,9 +225,13 @@ Vector ResolveNomad(Photon photon) {
 		colour = RED_GIANT.m_colour;
 	}
 
-	if (t < 1000.0) return colour;
+	t = CollisionTime(photon, SUN);
+	if (t < best_t) {
+		best_t = t;
+		colour = SUN.m_colour;
+	}
 
-	return Vector{ 0.0f, 0.0f, 0.0f };
+	return colour;
 }
 
 Vector inline f(Vector position, Vector direction, float r, float curvature) {
@@ -274,6 +281,12 @@ Photon MarchPhoton(Photon photon) {
 	return photon;
 }
 
+inline bool IsHittingBlackHole(float r) { return (r <= 2.0f); }
+
+inline bool IsHittingAccretionDisc(Vector p, float r) {
+	return (p.m_1 > -LAMBDA && p.m_1 < LAMBDA && r > ACCRETION_DISC_INNER_RADIUS && r < ACCRETION_DISC_OUTER_RADIUS);
+}
+
 // ---------- KERNEL ----------
 
 kernel void TracePhoton(
@@ -294,12 +307,13 @@ kernel void TracePhoton(
 	while (steps < MAX_STEPS) {
 		Vector p = photon.m_position;
 		float r = Magnitude(p);
-		if (r <= 3.0f) {
+
+		if (IsHittingBlackHole(r)) {
 			break;
 		}
 
-		if (p.m_1 > -LAMBDA && p.m_1 < LAMBDA && r > ACCRETION_DISC_INNER_RADIUS && r < ACCRETION_DISC_OUTER_RADIUS) {
-			HandleAccretionDiscCollision(r, &photonColour, &photonColourSpace);
+		if (IsHittingAccretionDisc(p, r)) {
+			HandleAccretionDiscCollision(p, r, &photonColour, &photonColourSpace);
 		}
 
 		if (
@@ -313,6 +327,8 @@ kernel void TracePhoton(
 			photonColour = photonColour + photonColourSpace * ResolveNomad(photon);
 			break;
 		}
+
+		if (photonColourSpace < 0.01f) break;
 
 		photon = MarchPhoton(photon);
 		//photon.m_position = p + photon.m_direction * LAMBDA;

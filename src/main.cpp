@@ -9,25 +9,32 @@
 #define LOOK_SENSITIVITY 0.005f
 
 
-struct MousePosition {
+struct MouseState {
 	int m_x;
 	int m_y;
+	bool m_mouseDown;
 };
 
-void handle_mouse_motion(SDL_Event& event, MousePosition& mp, GpuExecutor& executor) {
+void handle_mouse_motion(SDL_Event& event, MouseState& mouseState, GpuExecutor& executor, bool& moved) {
 	int x;
 	int y;
 
 	SDL_GetMouseState(&x, &y);
 
-	int dx = x - mp.m_x;
-	int dy = mp.m_y - y;
+	int dx = x - mouseState.m_x;
+	int dy = mouseState.m_y - y;
+
+	mouseState.m_x = x;
+	mouseState.m_y = y;
+
+	if (!mouseState.m_mouseDown) {
+		moved = false;
+		return;
+	}
 
 	executor.MoveHorizontally(dx * (-M_PI * LOOK_SENSITIVITY));
 	executor.MoveVertically(dy * (-M_PI * LOOK_SENSITIVITY));
-
-	mp.m_x = x;
-	mp.m_y = y;
+	moved = true;
 }
 
 void RenderScene(Canvas& canvas, uint32_t* buffer, GpuExecutor& executor) {
@@ -44,10 +51,11 @@ void Mainloop(Canvas& canvas, GpuExecutor& executor) {
     float lastFpsTime = lastTime;
     int frame_tick = FRAME_RATE_FREQUENCY;
 
-	MousePosition mousePosition;
-	SDL_GetMouseState(&mousePosition.m_x, &mousePosition.m_y);
+	MouseState mouseState{ 0, 0, false};
+	SDL_GetMouseState(&mouseState.m_x, &mouseState.m_y);
 
     bool running = true;
+	bool moved = false;
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -57,8 +65,17 @@ void Mainloop(Canvas& canvas, GpuExecutor& executor) {
                     break;
 
 				case SDL_MOUSEMOTION:
-					handle_mouse_motion(event, mousePosition, executor);
+					handle_mouse_motion(event, mouseState, executor, moved);
 					break;
+				
+				case SDL_MOUSEBUTTONDOWN:
+					std::cout << "MD\n";
+					mouseState.m_mouseDown = true;
+					break;
+				
+				case SDL_MOUSEBUTTONUP:
+					std::cout << "MU\n";
+					mouseState.m_mouseDown = false;
 
                 default:
                     break;
@@ -73,12 +90,15 @@ void Mainloop(Canvas& canvas, GpuExecutor& executor) {
         --frame_tick;
         if (0 == frame_tick) {
             float fps = FRAME_RATE_FREQUENCY / (currentTime - lastFpsTime);
-            std::cout << "fps: " << fps << "\n";
+			if (fps < 200.0f) std::cout << "fps: " << fps << "\n";
             frame_tick = FRAME_RATE_FREQUENCY;
             lastFpsTime = currentTime;
 		}
 
-		RenderScene(canvas, buffer, executor);
+		if (moved) {
+			RenderScene(canvas, buffer, executor);
+			moved = false;
+		}
 
 		lastTime = currentTime;
     }
